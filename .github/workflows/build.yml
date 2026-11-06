@@ -15,14 +15,14 @@ env:
   REPO_URL: https://github.com/hanwckf/padavan-4.4.git
   DEVICE: XY-C1
   TEMPLATE: configs/templates/XY-C1.config
-  # 关键：显式声明写权限，否则 GITHUB_TOKEN 默认只读，发布 Release 会 403
-  permissions:
-    contents: write
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 600
+    # 关键：显式声明写权限，否则 GITHUB_TOKEN 默认只读，发布 Release 会 403
+    permissions:
+      contents: write
 
     steps:
       - name: 检查源码

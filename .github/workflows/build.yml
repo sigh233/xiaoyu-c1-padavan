@@ -44,6 +44,14 @@ jobs:
           ./dl_toolchain.sh
           ls -la toolchain-4.4.x/
 
+      - name: 修复 e2fsprogs configure 宏 (gettext 不兼容)
+        run: |
+          cd padavan_src/trunk/user/e2fsprogs
+          # 新版 gettext/m4 要求宏参数用方括号: AM_GNU_GETTEXT([external])
+          sed -i 's/AS_GNU_GETTEXT(external)/AS_GNU_GETTEXT([external])/g' configure
+          # 确认修复是否生效
+          grep -n "AM_GNU_GETTEXT" configure | head -3
+
       - name: 复制设备配置 (可在此修改具体选项)
         run: |
           cd padavan_src/trunk

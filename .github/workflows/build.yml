@@ -48,7 +48,7 @@ jobs:
         run: |
           cd padavan_src/trunk/user/e2fsprogs
           # 新版 gettext/m4 要求宏参数用方括号: AM_GNU_GETTEXT([external])
-          sed -i 's/AS_GNU_GETTEXT(external)/AS_GNU_GETTEXT([external])/g' configure
+          sed -i 's/AM_GNU_GETTEXT(external)/AM_GNU_GETTEXT([external])/g' configure
           # 确认修复是否生效
           grep -n "AM_GNU_GETTEXT" configure | head -3
 

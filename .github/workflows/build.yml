@@ -56,8 +56,8 @@ jobs:
           python3 - <<'PY'
           p = 'user/e2fsprogs/Makefile'
           s = open(p).read()
-          old = 'autoreconf -fi;'
-          new = 'sed -i "s/AM_GNU_GETTEXT(external)/AM_GNU_GETTEXT([external])/g" configure.ac\nautoreconf -fi;'
+          old = 'autoreconf -fi ;'
+          new = 'sed -i "s/AM_GNU_GETTEXT(external)/AM_GNU_GETTEXT([external])/g" configure.ac \\\nautoreconf -fi ; \\'
           assert old in s, "autoreconf not found"
           s = s.replace(old, new, 1)
           open(p, 'w').write(s)
@@ -125,7 +125,7 @@ jobs:
             ### 硬件信息
             - 设备: XiaoYu XY-C1
             - CPU: MT7621A 双核 880MHz
-            - Flash: 16MB / RAM: 128MB
+            - Flash: 16MB / RAM: 128MB 
             
             ### 软件版本
             - 固件: padavan-4.4

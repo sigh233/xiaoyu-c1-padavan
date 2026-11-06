@@ -122,7 +122,7 @@ jobs:
           name: ${{ env.DEVICE }}-v${{ github.run_number }}
           tag_name: ${{ env.DEVICE }}-${{ github.run_number }}
           body: |
-            小娱C1 Padavan 固件 第 ${{} github.run_number }} 次构建
+            小娱C1 Padavan 固件 第 ${{ github.run_number }} 次构建
             版本号: v${{ github.run_number }}
           files: |
             padavan_src/openwrt/images/*.bin

@@ -1,0 +1,131 @@
+name: 「小娱C1 Padavan 老毛子固件编译」
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      padavan_version:
+        description: 'Padavan 分支版本'
+        default: 'padavan-4.4-2021.02'
+        required: false
+      openwrt_version:
+        description: 'OpenWrt 版本号'
+        default: '4.4'
+        required: false
+
+env:
+  REPO_URL: https://github.com/hanwckf/padavan-4.4.git
+  CONFIG_FILE: XY-C1.config
+  DEVICE: XY-C1
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    timeout-minutes: 300
+
+    steps:
+      - name: 检查源码
+        uses: actions/checkout@v4
+
+      - name: 安装编译依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-distutils rsync unzip zlib1g-dev file wget python3 swig
+
+      - name: 初始化 Padavan 源码
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p padavan_src
+          cd padavan_src
+          git clone $REPO_URL openwrt --depth 1
+          cd openwrt
+          git checkout trunk 2>/dev/null || git checkout master 2>/dev/null
+
+      - name: 下载工具链
+        run: |
+          cd padavan_src/openwrt
+          if [ -f "dl_toolchain.sh" ]; then
+            chmod +x dl_toolchain.sh
+            sh dl_toolchain.sh
+          fi
+          echo "工具链下载完成"
+
+      - name: 修改设备配置
+        run: |
+          cd padavan_src/openwrt
+          cp configs/templates/$DEVICE.config configs/templates/$DEVICE.config.bak
+          # 关闭不必要的服务以释放Flash空间
+          sed -i 's/CONFIG_SAMBA_22=y//g' configs/templates/$DEVICE.config
+          sed -i 's/CONFIG_UBI_FAST=y//g' configs/templates/$DEVICE.config
+          sed -i 's/CONFIG_USB_SERIAL=y//g' configs/templates/$DEVICE.config
+          # 开启IPv6支持
+          sed -i 's/CONFIG_IPV6=n/CONFIG_IPV6=y/' configs/templates/$DEVICE.config
+          ls -la configs/templates/$DEVICE.config
+
+      - name: 添加系统优化配置
+        run: |
+          cd padavan_src/openwrt
+          # 添加系统调优
+          echo "配置优化完成"
+
+      - name: 更新feeds
+        run: |
+          cd padavan_src/openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: 下载源码包
+        run: |
+          cd padavan_src/openwrt
+          make defconfig
+          if [ ! -f "/root/.toolchain-*.tar.gz" ]; then
+            echo "下载工具链"
+            cat dl_toolchain.sh 2>/dev/null || true
+          fi
+
+      - name: 编译固件
+        run: |
+          cd padavan_src/openwrt
+          fakeroot ./build_firmware_modify $DEVICE
+            
+          # 检查结果
+          if [ ! -f "images/$DEVICE-*.trx" ] && [ ! -f "images/*.bin" ]; then
+            echo "编译产物未生成"
+            tail -50 build.log 2>/dev/null
+            exit 1
+          fi
+          echo "编译完成"
+
+      - name: 整理固件文件
+        id: build
+        run: |
+          cd padavan_src/openwrt/images
+          ls -la
+          # 创建发布文件路径
+          echo "step_output="/home/runner/work/$DEVICE"" >> $GITHUB_OUTPUT
+
+      - name: 上传固件产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: $DEVICE-firmware-$(date +%Y%m%d-%H%M)
+          path: |
+            padavan_src/openwrt/images/*.bin
+            padavan_src/openwrt/images/*.trx
+          retention-days: 14
+
+      - name: 发布新版本
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.event.ref, 'refs/heads/main')
+        with:
+          name: ${{ env.DEVICE }}-v${{ github.run_number }}
+          tag_name: ${{ env.DEVICE }}-${{ github.run_number }}
+          body: |
+            小娱C1 Padavan 固件 第 ${{} github.run_number }} 次构建
+            版本号: v${{ github.run_number }}
+          files: |
+            padavan_src/openwrt/images/*.bin
+            padavan_src/openwrt/images/*.trx
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

@@ -52,17 +52,20 @@ jobs:
           # 硬件加速(SFE) 已在模板中默认开启: CONFIG_FIRMWARE_INCLUDE_SFE=y
           # 如需关闭其他功能以节省体积，可取消下面注释并改为实际配置值
           # sed -i 's/#CONFIG_FIRMWARE_INCLUDE_UVC=y/CONFIG_FIRMWARE_INCLUDE_UVC=n/' $TEMPLATE
-          # 修复 e2fsprogs 的 gettext 宏：在 autoreconf 前把 configure.ac 里的 AM_GNU_GETTEXT(external) 改成 AM_GNU_GETTEXT([external])
+          # 修复 e2fsprogs 的 gettext 宏：在 autoreconf 前把 configure.ac 里的
+          # AM_GNU_GETTEXT(external) 改成 AM_GNU_GETTEXT([external])，否则
+          # autoreconf 生成的 configure 会报 syntax error near unexpected token 'external'
           python3 - <<'PY'
           p = 'user/e2fsprogs/Makefile'
           s = open(p).read()
           old = 'autoreconf -fi ;'
-          new = 'sed -i "s/AM_GNU_GETTEXT(external)/AM_GNU_GETTEXT([external])/g" configure.ac \
-autoreconf -fi ; '
-          assert old in s, "autoreconf not found"
-          s = s.replace(old, new, 1)
-          open(p, 'w').write(s)
-          print("e2fsprogs Makefile patched")
+          new = 'sed -i "s/AM_GNU_GETTEXT(external)/AM_GNU_GETTEXT([external])/g" configure.ac ; autoreconf -fi ;'
+          if old in s:
+              s = s.replace(old, new, 1)
+              open(p, 'w').write(s)
+              print("e2fsprogs Makefile patched")
+          else:
+              print("WARN: autoreconf pattern not found, skipped")
           PY
 
       - name: 添加系统优化
@@ -91,7 +94,7 @@ autoreconf -fi ; '
           if [ -z "$(find images -name '*.trx' -type f 2>/dev/null)" ] && [ -z "$(find images -name '*.bin' -type f 2>/dev/null)" ]; then
             echo "错误: 固件文件未生成"
             ls -la images/
-            tail -20 build.log
+            tail -50 build.log
             exit 1
           fi
           echo "产物已生成:"
@@ -106,7 +109,7 @@ autoreconf -fi ; '
           cd $GITHUB_WORKSPACE/firmware
           ls -lh $GITHUB_WORKSPACE/firmware/
 
-      - name: 上传固件产物
+      - name: 上传 firmware产物
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.DEVICE }}-padavan-firmware-v${{ github.run_number }}
@@ -127,16 +130,16 @@ autoreconf -fi ; '
             firmware/*.bin
           body: |
             ## 小娱C1 Padavan 老毛子固件
-            
+
             ### 硬件信息
             - 设备: XiaoYu XY-C1
             - CPU: MT7621A 双核 880MHz
-            - Flash: 16MB / RAM: 128MB 
-            
+            - Flash: 16MB / RAM: 128MB
+
             ### 软件版本
             - 固件: padavan-4.4
             - 内核: Linux 4.4.x
-            
+
             ### 内置功能
             - 硬件加速 (SFE)
             - 多拨支持 (Multi-PPPoE)

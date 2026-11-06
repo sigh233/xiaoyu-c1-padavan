@@ -71,8 +71,9 @@ jobs:
       - name: 验证编译产物
         run: |
           cd padavan_src/trunk
-          if [ ! -f "images/*.trx" ] && [ ! -f "images/*.bin" ]; then
+          if [ -z "$(find images -name '*.trx' -type f 2>/dev/null)" ] && [ -z "$(find images -name '*.bin' -type f 2>/dev/null)" ]; then
             echo "错误: 固件文件未生成"
+            ls -la images/
             tail -20 build.log
             exit 1
           fi

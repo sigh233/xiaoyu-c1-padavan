@@ -44,14 +44,6 @@ jobs:
           ./dl_toolchain.sh
           ls -la toolchain-4.4.x/
 
-      - name: 修复 e2fsprogs configure 宏 (gettext 不兼容)
-        run: |
-          cd padavan_src/trunk/user/e2fsprogs
-          # 新版 gettext/m4 要求宏参数用方括号: AM_GNU_GETTEXT([external])
-          sed -i 's/AM_GNU_GETTEXT(external)/AM_GNU_GETTEXT([external])/g' configure
-          # 确认修复是否生效
-          grep -n "AM_GNU_GETTEXT" configure | head -3
-
       - name: 复制设备配置 (可在此修改具体选项)
         run: |
           cd padavan_src/trunk
@@ -60,6 +52,17 @@ jobs:
           # 硬件加速(SFE) 已在模板中默认开启: CONFIG_FIRMWARE_INCLUDE_SFE=y
           # 如需关闭其他功能以节省体积，可取消下面注释并改为实际配置值
           # sed -i 's/#CONFIG_FIRMWARE_INCLUDE_UVC=y/CONFIG_FIRMWARE_INCLUDE_UVC=n/' $TEMPLATE
+          # 修复 e2fsprogs 的 gettext 宏：在 autoreconf 前把 configure.ac 里的 AM_GNU_GETTEXT(external) 改成 AM_GNU_GETTEXT([external])
+          python3 - <<'PY'
+          p = 'user/e2fsprogs/Makefile'
+          s = open(p).read()
+          old = 'autoreconf -fi;'
+          new = 'sed -i "s/AM_GNU_GETTEXT(external)/AM_GNU_GETTEXT([external])/g" configure.ac\nautoreconf -fi;'
+          assert old in s, "autoreconf not found"
+          s = s.replace(old, new, 1)
+          open(p, 'w').write(s)
+          print("e2fsprogs Makefile patched")
+          PY
 
       - name: 添加系统优化
         run: |

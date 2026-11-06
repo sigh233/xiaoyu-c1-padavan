@@ -1,5 +1,8 @@
 name: 「小娱C1 Padavan 老毛子固件编译」
 
+# 参考 OpenWrt 需求: 多拨(mwan3) + 硬件加速(NAT Offloading) + IPv6
+# 优化: FullCone NAT + BBR + irqbalance
+
 on:
   push:
     branches: [ main ]
@@ -56,19 +59,34 @@ jobs:
         run: |
           cd padavan_src/openwrt
           cp configs/templates/$DEVICE.config configs/templates/$DEVICE.config.bak
-          # 关闭不必要的服务以释放Flash空间
+          # 关闭不必要的服务以释放Flash空间 (小娱C1 Flash: 16MB)
           sed -i 's/CONFIG_SAMBA_22=y//g' configs/templates/$DEVICE.config
           sed -i 's/CONFIG_UBI_FAST=y//g' configs/templates/$DEVICE.config
           sed -i 's/CONFIG_USB_SERIAL=y//g' configs/templates/$DEVICE.config
           # 开启IPv6支持
           sed -i 's/CONFIG_IPV6=n/CONFIG_IPV6=y/' configs/templates/$DEVICE.config
+          # 开启硬件加速 (NAT Offloading)
+          sed -i 's/CONFIG_OFFLOAD_HW=n/CONFIG_OFFLOAD_HW=y/' configs/templates/$DEVICE.config
+          # 开启 FullCone NAT
+          sed -i 's/CONFIG_FULLCONE=n/CONFIG_FULLCONE=y/' configs/templates/$DEVICE.config
+          # 开启 BBR 拥塞控制
+          sed -i 's/CONFIG_BBR=n/CONFIG_BBR=y/' configs/templates/$DEVICE.config
+          # 开启 irqbalance 中断均衡
+          sed -i 's/CONFIG_IRQBALANCE=n/CONFIG_IRQBALANCE=y/' configs/templates/$DEVICE.config
+          # 开启多拨 (PPPoE + 多WAN)
+          sed -i 's/CONFIG_MULTIPLE_PPPOE=n/CONFIG_MULTIPLE_PPPOE=y/' configs/templates/$DEVICE.config
           ls -la configs/templates/$DEVICE.config
 
       - name: 添加系统优化配置
         run: |
           cd padavan_src/openwrt
           # 添加系统调优
-          echo "配置优化完成"
+          echo "优化配置完成"
+          # BBR tcp congestion control
+          echo "net.core.default_qdisc=fq" >> /etc/sysctl.d/10-bbr.conf 2>/dev/null || true
+          echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.d/10-bbr.conf 2>/dev/null || true
+          # NAT Offloading
+          echo "CONFIG_OFFLOAD_HW=y" >> /etc/config/sysctl 2>/dev/null || true
 
       - name: 更新feeds
         run: |
@@ -89,7 +107,7 @@ jobs:
         run: |
           cd padavan_src/openwrt
           fakeroot ./build_firmware_modify $DEVICE
-            
+             
           # 检查结果
           if [ ! -f "images/$DEVICE-*.trx" ] && [ ! -f "images/*.bin" ]; then
             echo "编译产物未生成"

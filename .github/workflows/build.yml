@@ -57,7 +57,8 @@ jobs:
           p = 'user/e2fsprogs/Makefile'
           s = open(p).read()
           old = 'autoreconf -fi ;'
-          new = 'sed -i "s/AM_GNU_GETTEXT(external)/AM_GNU_GETTEXT([external])/g" configure.ac \\\nautoreconf -fi ; \\'
+          new = 'sed -i "s/AM_GNU_GETTEXT(external)/AM_GNU_GETTEXT([external])/g" configure.ac \
+autoreconf -fi ; '
           assert old in s, "autoreconf not found"
           s = s.replace(old, new, 1)
           open(p, 'w').write(s)
@@ -71,6 +72,11 @@ jobs:
           echo "net.core.default_qdisc=fq" >> /etc/sysctl.d/10-bbr.conf 2>/dev/null || true
           echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.d/10-bbr.conf 2>/dev/null || true
           echo "系统优化配置添加完成"
+
+      - name: 安装 gettext
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gettext
 
       - name: 开始编译 firmware
         run: |

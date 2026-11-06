@@ -1,7 +1,4 @@
-name: 「小娱C1 Padavan 老毛子固件编译」
-
-# 参考 OpenWrt 需求: 多拨(mwan3) + 硬件加速(NAT Offloading) + IPv6
-# 优化: FullCone NAT + BBR + irqbalance
+name: 小娱C1 Padavan 老毛子固件编译
 
 on:
   push:
@@ -9,141 +6,114 @@ on:
   workflow_dispatch:
     inputs:
       padavan_version:
-        description: 'Padavan 分支版本'
-        default: 'padavan-4.4-2021.02'
-        required: false
-      openwrt_version:
-        description: 'OpenWrt 版本号'
-        default: '4.4'
-        required: false
+        description: 'Padavan 源分支'
+        required: true
+        default: 'main'
+        type: string
 
 env:
   REPO_URL: https://github.com/hanwckf/padavan-4.4.git
-  CONFIG_FILE: XY-C1.config
   DEVICE: XY-C1
+  TEMPLATE: configs/templates/XY-C1.config
+  # 关键：显式声明写权限，否则 GITHUB_TOKEN 默认只读，发布 Release 会 403
+  permissions:
+    contents: write
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
-    timeout-minutes: 300
+    runs-on: ubuntu-22.04
+    timeout-minutes: 600
 
     steps:
       - name: 检查源码
         uses: actions/checkout@v4
 
-      - name: 安装编译依赖
+      - name: 准备工具链
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-distutils rsync unzip zlib1g-dev file wget python3 swig
+          cd toolchain-mipsel
+          chmod +x dl_toolchain.sh
+          # 从 GitHub Releases 下载预编译工具链 (x86_64 host)
+          ./dl_toolchain.sh
+          ls -la toolchain-4.4.x/
 
-      - name: 初始化 Padavan 源码
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+      - name: 复制设备配置 (可在此修改具体选项)
         run: |
-          mkdir -p padavan_src
-          cd padavan_src
-          git clone $REPO_URL openwrt --depth 1
-          cd openwrt
-          git checkout trunk 2>/dev/null || git checkout master 2>/dev/null
+          cd trunk
+          cp $TEMPLATE $TEMPLATE.bak
+          echo "使用模板: $TEMPLATE"
+          # 硬件加速(SFE) 已在模板中默认开启: CONFIG_FIRMWARE_INCLUDE_SFE=y
+          # 如需关闭其他功能以节省体积，可取消下面注释并改为实际配置值
+          # sed -i 's/#CONFIG_FIRMWARE_INCLUDE_UVC=y/CONFIG_FIRMWARE_INCLUDE_UVC=n/' $TEMPLATE
 
-      - name: 下载工具链
+      - name: 添加系统优化
         run: |
-          cd padavan_src/openwrt
-          if [ -f "dl_toolchain.sh" ]; then
-            chmod +x dl_toolchain.sh
-            sh dl_toolchain.sh
-          fi
-          echo "工具链下载完成"
-
-      - name: 修改设备配置
-        run: |
-          cd padavan_src/openwrt
-          cp configs/templates/$DEVICE.config configs/templates/$DEVICE.config.bak
-          # 关闭不必要的服务以释放Flash空间 (小娱C1 Flash: 16MB)
-          sed -i 's/CONFIG_SAMBA_22=y//g' configs/templates/$DEVICE.config
-          sed -i 's/CONFIG_UBI_FAST=y//g' configs/templates/$DEVICE.config
-          sed -i 's/CONFIG_USB_SERIAL=y//g' configs/templates/$DEVICE.config
-          # 开启IPv6支持
-          sed -i 's/CONFIG_IPV6=n/CONFIG_IPV6=y/' configs/templates/$DEVICE.config
-          # 开启硬件加速 (NAT Offloading)
-          sed -i 's/CONFIG_OFFLOAD_HW=n/CONFIG_OFFLOAD_HW=y/' configs/templates/$DEVICE.config
-          # 开启 FullCone NAT
-          sed -i 's/CONFIG_FULLCONE=n/CONFIG_FULLCONE=y/' configs/templates/$DEVICE.config
-          # 开启 BBR 拥塞控制
-          sed -i 's/CONFIG_BBR=n/CONFIG_BBR=y/' configs/templates/$DEVICE.config
-          # 开启 irqbalance 中断均衡
-          sed -i 's/CONFIG_IRQBALANCE=n/CONFIG_IRQBALANCE=y/' configs/templates/$DEVICE.config
-          # 开启多拨 (PPPoE + 多WAN)
-          sed -i 's/CONFIG_MULTIPLE_PPPOE=n/CONFIG_MULTIPLE_PPPOE=y/' configs/templates/$DEVICE.config
-          ls -la configs/templates/$DEVICE.config
-
-      - name: 添加系统优化配置
-        run: |
-          cd padavan_src/openwrt
-          # 添加系统调优
-          echo "优化配置完成"
-          # BBR tcp congestion control
+          cd trunk
+          # 添加 BBR 拥塞控制
           echo "net.core.default_qdisc=fq" >> /etc/sysctl.d/10-bbr.conf 2>/dev/null || true
           echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.d/10-bbr.conf 2>/dev/null || true
-          # NAT Offloading
-          echo "CONFIG_OFFLOAD_HW=y" >> /etc/config/sysctl 2>/dev/null || true
+          echo "系统优化配置添加完成"
 
-      - name: 更新feeds
+      - name: 开始编译 firmware
         run: |
-          cd padavan_src/openwrt
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          cd trunk
+          fakeroot ./build_firmware_modify $DEVICE 2>&1 | tee build.log
+          echo "编译输出:"
+          ls -la images/
 
-      - name: 下载源码包
+      - name: 验证编译产物
         run: |
-          cd padavan_src/openwrt
-          make defconfig
-          if [ ! -f "/root/.toolchain-*.tar.gz" ]; then
-            echo "下载工具链"
-            cat dl_toolchain.sh 2>/dev/null || true
-          fi
-
-      - name: 编译固件
-        run: |
-          cd padavan_src/openwrt
-          fakeroot ./build_firmware_modify $DEVICE
-             
-          # 检查结果
-          if [ ! -f "images/$DEVICE-*.trx" ] && [ ! -f "images/*.bin" ]; then
-            echo "编译产物未生成"
-            tail -50 build.log 2>/dev/null
+          cd trunk
+          if [ ! -f "images/*.trx" ] && [ ! -f "images/*.bin" ]; then
+            echo "错误: 固件文件未生成"
+            tail -20 build.log
             exit 1
           fi
-          echo "编译完成"
+          echo "产物已生成:"
+          ls -lh images/
 
       - name: 整理固件文件
-        id: build
         run: |
-          cd padavan_src/openwrt/images
-          ls -la
-          # 创建发布文件路径
-          echo "step_output="/home/runner/work/$DEVICE"" >> $GITHUB_OUTPUT
+          cd trunk
+          mkdir -p $GITHUB_WORKSPACE/firmware
+          cp images/*.trx $GITHUB_WORKSPACE/firmware/ 2>/dev/null || true
+          cp images/*.bin $GITHUB_WORKSPACE/firmware/ 2>/dev/null || true
+          cd $GITHUB_WORKSPACE/firmware
+          ls -lh $GITHUB_WORKSPACE/firmware/
 
       - name: 上传固件产物
         uses: actions/upload-artifact@v4
         with:
-          name: $DEVICE-firmware-$(date +%Y%m%d-%H%M)
-          path: |
-            padavan_src/openwrt/images/*.bin
-            padavan_src/openwrt/images/*.trx
-          retention-days: 14
+          name: ${{ env.DEVICE }}-padavan-firmware-v${{ github.run_number }}
+          path: firmware/
+          retention-days: 30
 
       - name: 发布新版本
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.event.ref, 'refs/heads/main')
+        uses: softprops/action-gh-release@v2
+        if: success()
         with:
-          name: ${{ env.DEVICE }}-v${{ github.run_number }}
-          tag_name: ${{ env.DEVICE }}-${{ github.run_number }}
-          body: |
-            小娱C1 Padavan 固件 第 ${{ github.run_number }} 次构建
-            版本号: v${{ github.run_number }}
+          # 关键：显式传 token。不传时 action 回退到 github.token，
+          # 若仓库默认 workflow 权限为只读就会 403
+          token: ${{ secrets.GH_PAT || github.token }}
+          tag_name: ${{ env.DEVICE }}-padavan-${{ github.run_number }}
+          name: 小娱C1 Padavan ${{ github.event.inputs.padavan_version || 'main' }} 版
           files: |
-            padavan_src/openwrt/images/*.bin
-            padavan_src/openwrt/images/*.trx
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+            firmware/*.trx
+            firmware/*.bin
+          body: |
+            ## 小娱C1 Padavan 老毛子固件
+            
+            ### 硬件信息
+            - 设备: XiaoYu XY-C1
+            - CPU: MT7621A 双核 880MHz
+            - Flash: 16MB / RAM: 128MB
+            
+            ### 软件版本
+            - 固件: padavan-4.4
+            - 内核: Linux 4.4.x
+            
+            ### 内置功能
+            - 硬件加速 (SFE)
+            - 多拨支持 (Multi-PPPoE)
+            - IPv6 支持
+            - FullCone NAT (P2P加速)
+            - BBR 拥塞控制

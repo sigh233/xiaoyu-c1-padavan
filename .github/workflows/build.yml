@@ -28,8 +28,16 @@ jobs:
       - name: 检查源码
         uses: actions/checkout@v4
 
+      - name: 下载 Padavan 完整源码
+        run: |
+          git clone --depth 1 $REPO_URL padavan_src
+          cd padavan_src
+          git submodule update --init --recursive || true
+
       - name: 准备工具链
         run: |
+          cd padavan_src
+          ls -la toolchain-mipsel/
           cd toolchain-mipsel
           chmod +x dl_toolchain.sh
           # 从 GitHub Releases 下载预编译工具链 (x86_64 host)
@@ -38,7 +46,7 @@ jobs:
 
       - name: 复制设备配置 (可在此修改具体选项)
         run: |
-          cd trunk
+          cd padavan_src/trunk
           cp $TEMPLATE $TEMPLATE.bak
           echo "使用模板: $TEMPLATE"
           # 硬件加速(SFE) 已在模板中默认开启: CONFIG_FIRMWARE_INCLUDE_SFE=y
@@ -47,7 +55,7 @@ jobs:
 
       - name: 添加系统优化
         run: |
-          cd trunk
+          cd padavan_src/trunk
           # 添加 BBR 拥塞控制
           echo "net.core.default_qdisc=fq" >> /etc/sysctl.d/10-bbr.conf 2>/dev/null || true
           echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.d/10-bbr.conf 2>/dev/null || true
@@ -55,14 +63,14 @@ jobs:
 
       - name: 开始编译 firmware
         run: |
-          cd trunk
+          cd padavan_src/trunk
           fakeroot ./build_firmware_modify $DEVICE 2>&1 | tee build.log
           echo "编译输出:"
           ls -la images/
 
       - name: 验证编译产物
         run: |
-          cd trunk
+          cd padavan_src/trunk
           if [ ! -f "images/*.trx" ] && [ ! -f "images/*.bin" ]; then
             echo "错误: 固件文件未生成"
             tail -20 build.log
@@ -73,7 +81,7 @@ jobs:
 
       - name: 整理固件文件
         run: |
-          cd trunk
+          cd padavan_src/trunk
           mkdir -p $GITHUB_WORKSPACE/firmware
           cp images/*.trx $GITHUB_WORKSPACE/firmware/ 2>/dev/null || true
           cp images/*.bin $GITHUB_WORKSPACE/firmware/ 2>/dev/null || true

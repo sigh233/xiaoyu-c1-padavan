@@ -1,4 +1,4 @@
-name: 小娱C1 Padavan 老毛子固件编译 (NAPT66)
+name: 小娱C1 Padavan :  寛子固件编译 (NAPT66)
 
 on:
   push:
@@ -6,12 +6,12 @@ on:
   workflow_dispatch:
     inputs:
       padavan_commit:
-        description: 'Padavan 固件提交 (NAPT66 最后版本: 80d1d82)'
+        description: 'Padavan 提交 (NAPT66 最后一个版本 80d1d82)'
         required: true
         default: '80d1d82fe61a39582e37b4d0050d474664ae10b2'
         type: string
       enable_extra_debug:
-        description: '开启额外编译日志'
+        description: '开启额外调试输出'
         required: false
         default: 'false'
         type: boolean
@@ -33,7 +33,7 @@ jobs:
       - name: 检查源码
         uses: actions/checkout@v4
 
-      - name: 下载 Padavan 指定提交 (含 napt66 驱动)
+      - name: 下载 Padavan 指定提交
         run: |
           git clone --depth 1 $REPO_URL padavan_src
           cd padavan_src
@@ -51,7 +51,7 @@ jobs:
           ./dl_toolchain.sh
           ls -la toolchain-3.4.x/
 
-      - name: 复制设备配置 (可在此修改具体选项)
+      - name: 复制设备配置
         run: |
           cd padavan_src/trunk
           cp $TEMPLATE $TEMPLATE.bak
@@ -78,15 +78,27 @@ jobs:
       - name: 添加系统优化
         run: |
           cd padavan_src/trunk
-          # 添加 BBR 拥塞 control
+          # 添加 BBR 拥塞控制
           echo "net.core.default_qdisc=fq" >> /etc/sysctl.d/10-bbr.conf 2>/dev/null || true
           echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.d/10-bbr.conf 2>/dev/null || true
           echo "系统优化配置添加完成"
 
-      - name: 安装 gettext
+      - name: 安装构建工具 (gettext/autopoint/libtool/automake/toolchain)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y gettext
+          # 关键：必须安装 gettext (提供 autopoint)、autoconf、automake、libtool、pkg-config
+          # 否则 mksquashfs_xz 的 xz-5.2.4 在 autogen.sh 中会报 "autopoint: not found"
+          sudo apt-get install -y --no-install-recommends \
+            gettext \
+            autoconf \
+            automake \
+            libtool \
+            pkg-config \
+            m4 \
+            build-essential
+          echo "确认工具链:"
+          which autopoint libtoolize automake autoconf
+          ls -l $(which autopoint)
 
       - name: 开始编译 firmware
         run: |
@@ -131,7 +143,7 @@ jobs:
           # 若仓库默认 workflow 权限为只读就会 403
           token: ${{ secrets.GH_PAT || github.token }}
           tag_name: ${{ env.DEVICE }}-padavan-${{ github.run_number }}
-          name: 小娱C1 Padavan ${{ github.event.inputs.padavan_commit }} 版
+          name: 小娱C1 Padavan ${{ github.event.inputs.padavan_commit || '80d1d82' }} 版
           files: |
             firmware/*.trx
             firmware/*.bin
@@ -140,20 +152,17 @@ jobs:
 
             ### 硬件信息
             - 设备: XiaoYu XY-C1
-            - CPU: MT7620A 单核 575MHz
+            - CPU: MT7620A 880MHz
             - Flash: 16MB / RAM: 128MB
 
             ### 软件版本
-            - 固件: immortalwrt/padavan (老毛子)
+            - 固件: immortalwrt/padavan (NAPT66 最后一个版本)
             - 内核: Linux 3.4.x
 
             ### 内置功能
             - 硬件加速 (SFE)
             - 多拨支持 (Multi-PPPoE)
-            - IPv6 支持 (NAPT66)
+            - IPv6 支持
             - FullCone NAT (P2P加速)
+            - NAPT66 (IPv6 NAT, WebUI中启用)
             - BBR 拥塞控制
-
-            ### 关于 NAPT66
-            - 此版本启用了 `CONFIG_FIRMWARE_INCLUDE_NAPT66` (老毛子原版 napt66 驱动)
-            - 请在 WebUI 中进入 网络设置 > IPv6 > NAPT66 启用

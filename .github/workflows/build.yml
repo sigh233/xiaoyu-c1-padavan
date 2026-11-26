@@ -90,7 +90,7 @@ jobs:
 
       - name: 开始编译 firmware
         run: |
-          cd.padavan_src/trunk
+          cd padavan_src/trunk
           fakeroot ./build_firmware_modify $DEVICE 2>&1 | tee build.log
           echo "编译输出:"
           ls -la images/
